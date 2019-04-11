@@ -17,6 +17,8 @@ def main():
     # plot_soln(two_body_elliptical)
     plot_soln(four_body)
 
+    # save_soln(four_body, tmax=60, filename="fourbody.mp4")
+
 # EXAMPLES
 
 # two bodies start orbiting each other,
@@ -114,12 +116,13 @@ class ParticleAnimator:
     This class handles the creation and updating of the plot
     '''
 
-    def __init__(self, z):
+    def __init__(self, z, tstep=0.1):
         '''
         z holds the initial conditions
         '''
 
         self.z = z
+        self.tstep = tstep
 
         self.fig, ax = plt.subplots(figsize=(6,6))
         ax.set_xlim(-4, 4)
@@ -148,10 +151,9 @@ class ParticleAnimator:
         '''
 
         trail_time = 20
-        tstep = 0.1
 
         # update z for this time step
-        r = solve_ivp(diff_eq, (0, tstep), self.z[:,-1], method='Radau')
+        r = solve_ivp(diff_eq, (0, self.tstep), self.z[:,-1], method='Radau')
 
         # keep at most trail_time previous locations.
         # if we already have that many, get rid of the oldest one
@@ -208,8 +210,16 @@ class TrailingLine:
 
 def plot_soln(z0):
     part_anim = ParticleAnimator(z0)
-    anim = FuncAnimation(part_anim.fig, part_anim.update, blit=True, interval=20)
+    anim = FuncAnimation(part_anim.fig, part_anim.update, blit=True, interval=30)
     plt.show()
+
+def save_soln(z0, tmax, filename, tstep=0.1):
+    part_anim = ParticleAnimator(z0, tstep)
+    nframes = int(tmax/tstep)
+    anim = FuncAnimation(part_anim.fig, part_anim.update, blit=True, frames=np.arange(nframes), interval=30)
+
+    print('Saving to file "{}"'.format(filename))
+    anim.save(filename)
 
 if __name__ == "__main__":
     main()
