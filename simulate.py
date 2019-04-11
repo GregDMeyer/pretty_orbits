@@ -1,117 +1,215 @@
+'''
+A simulation of long-range interacting classical particles in 2D.
+
+Uncomment the various lines in main() to see a few examples.
+
+Copyright Greg Meyer (c) 2019
+'''
 
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.collections import LineCollection
 from scipy.integrate import solve_ivp
+
+def main():
+    # plot_soln(three_body_eject)
+    # plot_soln(two_body_elliptical)
+    plot_soln(four_body)
+
+# EXAMPLES
+
+# two bodies start orbiting each other,
+# a third interacts, ejecting one and replacing it
+three_body_eject = np.array([
+#   px  py
+    0.5,  -0.05,
+    -0.5, -0.05,
+    0,    0.1,
+#   qx  qy
+    0, 1.08,
+    0, 0.92,
+    0,  -2,
+])[np.newaxis].T
+
+# simply two-body elliptical orbit
+two_body_elliptical = np.array([
+#   px  py
+    -0.2,  0,
+    0.2,   0,
+#   qx  qy
+    0, 0.5,
+    0, -0.5,
+])[np.newaxis].T
+
+# four bodies
+four_body = np.array([
+#   px  py
+    0.5,  -0.05,
+    -0.5, -0.05,
+    0,    0.05,
+    0,    0.05,
+#   qx  qy
+    0, 2.08,
+    0, 1.92,
+    0.1,  -2,
+    -0.1,  -2,
+])[np.newaxis].T
 
 def diff_eq(t, z):
     """
-    Interacting particles in 2D, with r^-2 interaction
+    Compute the first time derivative of z = (p,q) (momentum and position coordinates).
+    Here, q = (x1, y1, x2, y2, ...)
+
+    qdot = p
+    pdot = F(q), the sum of forces from all other particles
+
+    This function implements a central force between each pair of particles
+    that scales as 1/r^alpha
     """
 
     n = len(z)//4
 
-    zdot = np.ndarray(z.size)
+    p = z[:2*n]
+    x = z[2*n::2]
+    y = z[2*n+1::2]
 
-    # qdot = p
-    zdot[2*n:] = z[:2*n]
+    qdot = p
+
+    pxdot = np.ndarray(p.size//2)
+    pydot = np.ndarray(p.size//2)
 
     # pdot = F
-    f_coeff = 0.1
-    alpha = 3
+    f_coeff = 0.1     # the coefficient on the force
+    alpha = 2         # the exponent of the force decay
+    smoothing = 0.05  # to make the potential not singular
     for i in range(n):
 
-        # compute all hypotenuses
-        r = np.maximum(0.05, np.hypot(z[2*n::2]-z[2*n+2*i], z[2*n+1::2]-z[2*(n+i)+1]))
+        # compute distance r to all particles
+        r = np.sqrt((x - x[i])**2 + (y - y[i])**2 + smoothing**2)
 
-        zdot[2*i] = 0
-        zdot[2*i+1] = 0
+        # compute all interactions, except for with itself
+        pxdot[i] = 0
+        pydot[i] = 0
         if i>0:
-            zdot[2*i] += -np.sum((z[2*(n+i)] - z[2*n:2*(n+i):2]) / r[:i]**alpha)
-            zdot[2*i+1] += -np.sum((z[2*(n+i)+1] - z[2*n+1:2*(n+i)+1:2]) / r[:i]**alpha)
+            pxdot[i] += -np.sum((x[i] - x[:i]) / r[:i]**(alpha+1))
+            pydot[i] += -np.sum((y[i] - y[:i]) / r[:i]**(alpha+1))
         if i<n-1:
-            zdot[2*i] += -np.sum((z[2*(n+i)] - z[2*(n+i+1)::2]) / r[i+1:]**alpha)
-            zdot[2*i+1] += -np.sum((z[2*(n+i)+1] - z[2*(n+i+1)+1::2]) / r[i+1:]**alpha)
+            pxdot[i] += -np.sum((x[i] - x[i+1:]) / r[i+1:]**(alpha+1))
+            pydot[i] += -np.sum((y[i] - y[i+1:]) / r[i+1:]**(alpha+1))
 
-    zdot[:2*n] *= f_coeff
+    # scale our summed accelerations by the coefficient
+    pxdot *= f_coeff
+    pydot *= f_coeff
+
+    # recombine our results into zdot
+    pdot = np.vstack([pxdot, pydot]).T.flatten()
+    zdot = np.hstack([pdot, qdot])
 
     return zdot
 
 
 class ParticleAnimator:
+    '''
+    This class handles the creation and updating of the plot
+    '''
 
     def __init__(self, z):
+        '''
+        z holds the initial conditions
+        '''
 
         self.z = z
 
-        self.fig, ax = plt.subplots(figsize=(3,3))
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
+        self.fig, ax = plt.subplots(figsize=(6,6))
+        ax.set_xlim(-4, 4)
+        ax.set_ylim(-4, 4)
         ax.set_aspect('equal')
+        ax.set_position([0, 0, 1, 1])
 
         ax.axis('off')
 
         n = z.shape[0] // 4
 
+        # make each particle a different color
         colors = ['C{}'.format(x) for x in range(n)]
 
-        self.pts = plt.scatter(z[2*n::2], z[2*n+1::2], c=colors)
+        # put dots on each point
+        self.pts = plt.scatter(z[2*n::2], z[2*n+1::2], c=colors, zorder=3)
+
+        # add lines trailing off each point
         self.lns = []
         for i in range(n):
-            self.lns.append(plt.plot([], [], color=colors[i])[0])
+            self.lns.append(TrailingLine([], [], ax, 2.0, color=colors[i]))
 
     def update(self, frame):
+        '''
+        Compute the next time step, and update the plot accordingly
+        '''
 
-        trail_time = 100
+        trail_time = 20
         tstep = 0.1
 
+        # update z for this time step
         r = solve_ivp(diff_eq, (0, tstep), self.z[:,-1], method='Radau')
 
+        # keep at most trail_time previous locations.
+        # if we already have that many, get rid of the oldest one
+        # otherwise, add a new entry to the previous locations
         if self.z.shape[1] > trail_time:
             self.z[:,:-1] = self.z[:,1:]
         else:
             self.z = np.hstack([self.z, np.ndarray((self.z.shape[0],1))])
 
+        # add the IVP result
         self.z[:,-1] = r.y[:,-1]
 
         n = self.z.shape[0] // 4
 
+        # update the scatter points
         frame_data = np.vstack([self.z[2*n::2, -1], self.z[2*n+1::2, -1]]).T
         self.pts.set_offsets(frame_data)
 
-        # add trailing lines
+        # update trailing lines
         for i, ln in enumerate(self.lns):
             ln.set_data(self.z[2*(n+i),:], self.z[2*(n+i)+1,:])
 
-        return [self.pts] + self.lns
+        return [self.pts] + [ln.lc for ln in self.lns]
 
-def plot_soln(zs):
-    part_anim = ParticleAnimator(zs)
+
+class TrailingLine:
+    '''
+    This class plots a line that starts out with zero thickness and linearly
+    increases to thickness max_width along its path.
+    '''
+
+    def __init__(self, x, y, ax, max_width, **kwargs):
+        self.ax = ax
+        self.max_width = max_width
+        lw = self._compute_linewidths(len(x))
+
+        self.lc = LineCollection(self._compute_segments(x,y), linewidths=lw, **kwargs)
+
+        ax.add_collection(self.lc)
+
+    def set_data(self, x, y):
+        self.lc.set_segments(self._compute_segments(x, y))
+        lw = self._compute_linewidths(len(x))
+        self.lc.set_linewidth(lw)
+
+    @classmethod
+    def _compute_segments(cls, x, y):
+        points = np.array([x, y]).T.reshape(-1, 1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        return segments
+
+    def _compute_linewidths(self, npts):
+        return np.linspace(0, self.max_width, npts)[:-1]
+
+def plot_soln(z0):
+    part_anim = ParticleAnimator(z0)
     anim = FuncAnimation(part_anim.fig, part_anim.update, blit=True, interval=20)
     plt.show()
-
-def main():
-    z0 = np.array([
-    #   px  py
-        0.5,  -0.05,
-        -0.5, -0.05,
-        0,    0.1,
-    #   qx  qy
-        0, 1.11,
-        0, 0.89,
-        0,  -2,
-    ])[np.newaxis].T
-
-    # z0 = np.array([
-    # #   px  py
-    #     -0.2,  0,
-    #     0.2,   0,
-    # #   qx  qy
-    #     0, 0.5,
-    #     0, -0.5,
-    # ])[np.newaxis].T
-
-    plot_soln(z0)
 
 if __name__ == "__main__":
     main()
