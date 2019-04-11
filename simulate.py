@@ -37,42 +37,57 @@ def diff_eq(t, z):
 
     return zdot
 
-def plot_init(z):
-    fig, ax = plt.subplots(figsize=(3,3))
-    ax.set_xlim(-2, 2)
-    ax.set_ylim(-2, 2)
-    ax.set_aspect('equal')
 
-    ax.axis('off')
+class ParticleAnimator:
 
-    n = z.shape[0] // 4
+    def __init__(self, z):
 
-    colors = ['C{}'.format(x) for x in range(n)]
+        self.z = z
 
-    pts = plt.scatter(z[2*n::2, 0], z[2*n+1::2, 0], c=colors)
-    lns = []
-    for i in range(n):
-        lns.append(plt.plot([], [], color=colors[i])[0])
+        self.fig, ax = plt.subplots(figsize=(3,3))
+        ax.set_xlim(-2, 2)
+        ax.set_ylim(-2, 2)
+        ax.set_aspect('equal')
 
-    return fig, (pts, lns)
+        ax.axis('off')
 
-def plot_update(frame, draw_objs, z):
-    n = z.shape[0] // 4
-    pts, lns = draw_objs
-    frame_data = np.vstack([z[2*n::2, frame], z[2*n+1::2, frame]]).T
-    pts.set_offsets(frame_data)
+        n = z.shape[0] // 4
 
-    # add trailing lines
-    trail_time = 10  # number of frames to trail for
-    start = max(0, frame - trail_time)
-    for i, ln in enumerate(lns):
-        ln.set_data(z[2*(n+i), start:frame], z[2*(n+i)+1, start:frame])
+        colors = ['C{}'.format(x) for x in range(n)]
 
-    return [pts] + lns
+        self.pts = plt.scatter(z[2*n::2], z[2*n+1::2], c=colors)
+        self.lns = []
+        for i in range(n):
+            self.lns.append(plt.plot([], [], color=colors[i])[0])
 
-def plot_soln(ts, zs):
-    f,draw_objs = plot_init(zs)
-    anim = FuncAnimation(f, lambda frame, d=draw_objs, z=zs: plot_update(frame, d, z), frames=np.arange(ts.size), blit=True, interval=25)
+    def update(self, frame):
+
+        trail_time = 100
+        tstep = 0.1
+
+        r = solve_ivp(diff_eq, (0, tstep), self.z[:,-1], method='Radau')
+
+        if self.z.shape[1] > trail_time:
+            self.z[:,:-1] = self.z[:,1:]
+        else:
+            self.z = np.hstack([self.z, np.ndarray((self.z.shape[0],1))])
+
+        self.z[:,-1] = r.y[:,-1]
+
+        n = self.z.shape[0] // 4
+
+        frame_data = np.vstack([self.z[2*n::2, -1], self.z[2*n+1::2, -1]]).T
+        self.pts.set_offsets(frame_data)
+
+        # add trailing lines
+        for i, ln in enumerate(self.lns):
+            ln.set_data(self.z[2*(n+i),:], self.z[2*(n+i)+1,:])
+
+        return [self.pts] + self.lns
+
+def plot_soln(zs):
+    part_anim = ParticleAnimator(zs)
+    anim = FuncAnimation(part_anim.fig, part_anim.update, blit=True, interval=20)
     plt.show()
 
 def main():
@@ -85,17 +100,18 @@ def main():
         0, 1.11,
         0, 0.89,
         0,  -2,
-    ])
+    ])[np.newaxis].T
 
-    tmin = 0
-    tmax = 50
-    tpts = tmax*10
+    # z0 = np.array([
+    # #   px  py
+    #     -0.2,  0,
+    #     0.2,   0,
+    # #   qx  qy
+    #     0, 0.5,
+    #     0, -0.5,
+    # ])[np.newaxis].T
 
-    ts = np.linspace(tmin, tmax, tpts)
-
-    r = solve_ivp(diff_eq, (tmin, tmax), z0, t_eval=ts, method='Radau')
-
-    plot_soln(r.t, r.y)
+    plot_soln(z0)
 
 if __name__ == "__main__":
     main()
