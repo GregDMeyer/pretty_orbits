@@ -17,12 +17,12 @@ def diff_eq(t, z):
     zdot[2*n:] = z[:2*n]
 
     # pdot = F
-    f_coeff = 0.5
-    alpha = 2
+    f_coeff = 0.1
+    alpha = 3
     for i in range(n):
 
         # compute all hypotenuses
-        r = np.hypot(z[2*n::2]-z[2*n+2*i], z[2*n+1::2]-z[2*(n+i)+1])
+        r = np.maximum(0.05, np.hypot(z[2*n::2]-z[2*n+2*i], z[2*n+1::2]-z[2*(n+i)+1]))
 
         zdot[2*i] = 0
         zdot[2*i+1] = 0
@@ -78,22 +78,22 @@ def plot_soln(ts, zs):
 def main():
     z0 = np.array([
     #   px  py
-        0.5,  -0.01,
-        -0.5, -0.01,
-        0,    0.02,
+        0.5,  -0.05,
+        -0.5, -0.05,
+        0,    0.1,
     #   qx  qy
-        0, 1.1,
-        0, 0.9,
+        0, 1.11,
+        0, 0.89,
         0,  -2,
     ])
 
     tmin = 0
-    tmax = 100
-    tpts = tmax*15
+    tmax = 50
+    tpts = tmax*10
 
     ts = np.linspace(tmin, tmax, tpts)
 
-    r = solve_ivp(diff_eq, (tmin, tmax), z0, t_eval=ts)
+    r = solve_ivp(diff_eq, (tmin, tmax), z0, t_eval=ts, method='Radau')
 
     plot_soln(r.t, r.y)
 
