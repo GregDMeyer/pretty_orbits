@@ -24,14 +24,14 @@ def main():
 # two bodies start orbiting each other,
 # a third interacts, ejecting one and replacing it
 three_body_eject = np.array([
-#   px  py
-    0.5,  -0.05,
-    -0.5, -0.05,
-    0,    0.1,
-#   qx  qy
-    0, 1.08,
-    0, 0.92,
-    0,  -2,
+#    px     py
+     0.5,  -0.05, # first particle momentum
+    -0.5,  -0.05, # second particle
+       0,    0.1, # third particle
+#    qx     qy
+     0,     1.08, # first particle position
+     0,     0.92, # second particle
+     0,     -2,   # third particle
 ])[np.newaxis].T
 
 # simply two-body elliptical orbit
